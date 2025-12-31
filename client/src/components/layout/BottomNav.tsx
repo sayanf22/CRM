@@ -29,18 +29,24 @@ export default function BottomNav() {
           return (
             <Link key={item.path} href={item.path}>
               <span className={cn(
-                "relative flex flex-col sm:flex-row items-center sm:justify-start justify-center flex-1 sm:flex-none h-full sm:h-12 py-2 sm:py-0 sm:px-4 text-xs sm:text-sm font-medium transition-colors duration-200 select-none cursor-pointer rounded-md",
-                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                "relative flex flex-col sm:flex-row items-center sm:justify-start justify-center flex-1 sm:flex-none h-full sm:h-12 py-2 sm:py-0 sm:px-4 text-xs sm:text-sm font-medium transition-all duration-200 select-none cursor-pointer rounded-md group",
+                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/20"
               )}>
                 {isActive && (
                   <motion.div
                     layoutId="nav-indicator"
-                    className="absolute -top-[1px] sm:top-0 sm:left-0 sm:w-[2px] sm:h-full sm:bg-primary left-0 right-0 h-[2px] bg-primary sm:rounded-none rounded-full mx-auto w-12 sm:w-auto"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    className="absolute inset-0 bg-primary/10 sm:bg-transparent sm:border-l-2 sm:border-primary border-b-2 border-primary sm:border-b-0 rounded-md sm:rounded-none z-0"
+                    transition={{ type: "spring", stiffness: 350, damping: 30 }}
                   />
                 )}
-                <Icon className={cn("w-5 h-5 mb-1 sm:mb-0 sm:mr-3", isActive && "stroke-[2.5px]")} />
-                <span className={cn(isActive && "font-semibold")}>{item.label}</span>
+                <Icon className={cn(
+                  "w-5 h-5 mb-1 sm:mb-0 sm:mr-3 z-10 transition-transform duration-200 group-hover:scale-110", 
+                  isActive && "stroke-[2.5px]"
+                )} />
+                <span className={cn(
+                  "z-10 transition-colors duration-200",
+                  isActive && "font-semibold"
+                )}>{item.label}</span>
               </span>
             </Link>
           );
