@@ -1,0 +1,231 @@
+You are a senior full-stack product engineer and UI/UX designer.
+
+Build a modern, lightweight, professional CRM web app for a small 3–5 member team.
+All users are ADMIN (every team member can assign tasks, manage leads, manage clients, and manage team operations).
+
+====================================
+GLOBAL DESIGN & UX RULES
+====================================
+- Bright mode ONLY
+- Pure white background (#FFFFFF)
+- Black primary text (#000000)
+- Neutral gray for secondary text
+- Minimal accent color (only where needed)
+- Clean, distraction-free interface
+- Extremely easy to understand (non-technical users)
+- Mobile-first + desktop responsive
+- Smooth micro-animations (slide, fade, smooth tab switch)
+- Fast performance, no heavy effects
+
+====================================
+AUTH & TEAM MANAGEMENT
+====================================
+- Invite-only authentication
+- Admin sends invite via email or secure link
+- Invite link expires after set time
+- No public signup allowed
+- All users have full admin permissions
+- Team member list with active/inactive status
+
+====================================
+NAVIGATION (BOTTOM NAV BAR)
+====================================
+Use a FIXED bottom navigation bar for all main sections.
+
+Bottom Navigation Items:
+- Dashboard
+- Leads
+- Clients
+- Tasks
+- Team
+
+Rules:
+- Icons + labels
+- Smooth animated tab switching
+- Clear active state
+- Clean spacing
+- Works perfectly on mobile and desktop
+
+====================================
+DASHBOARD
+====================================
+- Today’s assigned calls
+- Pending follow-ups
+- Active tasks
+- Simple progress indicators
+- No clutter
+
+====================================
+MODULE 1: LEADS (CALL & FOLLOW-UP MANAGEMENT)
+====================================
+Each Lead contains:
+- Name
+- Phone number
+- Business name
+- Assigned team member
+- Lead status:
+  - Not Interested
+  - Not Sure
+  - Interested
+- Interest Level Slider (1% – 100%)
+  - Color transition:
+    - Red (1–30)
+    - Yellow (31–70)
+    - Green (71–100)
+
+------------------------------------
+CALL FOLLOW-UP SYSTEM
+------------------------------------
+After every call, user MUST:
+- Write mandatory Call Summary
+- Select Call Outcome:
+  - No response
+  - Call back later
+  - Interested
+  - Not interested
+- Set Next Follow-up Date & Time
+
+Rules:
+- Call cannot be completed without summary
+- Each follow-up creates timeline entry
+- Follow-up reminder notification scheduled at selected time
+
+====================================
+DAILY CALL TASK ALLOCATION
+====================================
+Allow any team member to:
+- Assign daily call targets:
+  - Team member
+  - Number of calls (e.g. 20)
+  - Service type
+  - Date
+
+Team member view:
+- Calls assigned today
+- Calls completed
+- Animated progress bar
+- Completion requires follow-up note
+
+====================================
+MODULE 2: CLIENTS (POST-CONVERSION)
+====================================
+When lead confirms service:
+- Button: "Convert to Client"
+- Moves lead from Leads → Clients
+
+Client Profile includes:
+- Business name
+- Owner name
+- Phone / WhatsApp
+- Address
+- Services opted (multi-select)
+- Start date
+- Delivery date
+- Client status:
+  - Onboarding
+  - In Progress
+  - Waiting on Client
+  - Delivered
+  - Closed
+
+====================================
+TASK & DELIVERY MANAGEMENT
+====================================
+Inside each Client:
+- Create tasks with:
+  - Task title
+  - Description
+  - Assigned team member
+  - Deadline
+  - Reminder time (specific time selection)
+  - Assigned by (auto-filled with creator name)
+
+Task must display:
+- Assigned to
+- Assigned by
+- Due date
+- Status:
+  - Pending
+  - In Progress
+  - Completed
+
+------------------------------------
+TASK RULES
+------------------------------------
+- Push notification at reminder time
+- Daily reminder until completion
+- Missed deadline triggers escalation notification
+- Task history records who assigned and who completed
+
+------------------------------------
+DELIVERY
+------------------------------------
+- Button: "Mark as Delivered"
+- Locks client editing
+- Stores:
+  - Delivery date
+  - Delivered by
+  - Final delivery notes
+
+====================================
+MODULE 3: TASKS (GLOBAL VIEW)
+====================================
+- View all tasks across leads and clients
+- Filters:
+  - Assigned to
+  - Assigned by
+  - Status
+  - Due today / overdue
+- Quick status update
+- Add completion note
+
+====================================
+MODULE 4: NOTIFICATIONS
+====================================
+In-app + push notifications for:
+- New lead assignment
+- Follow-up reminder at selected time
+- Task assigned (with assigned-by info)
+- Task reminder at scheduled time
+- Deadline tomorrow
+- Deadline missed
+
+Daily summary notification:
+"You have X follow-ups and Y pending tasks today."
+
+====================================
+MODULE 5: ACTIVITY TIMELINE
+====================================
+Automatic timeline entries for:
+- Call completed
+- Follow-up added
+- Interest % updated
+- Status change
+- Task assigned (shows assigned by)
+- Task completed
+- Client delivered
+
+Timeline visible inside:
+- Lead profile
+- Client profile
+
+====================================
+ANIMATIONS & INTERACTIONS
+====================================
+- Slide-in panels for details
+- Smooth tab transitions (200–300ms)
+- Animated progress bars
+- Animated sliders
+- Subtle hover and tap feedback
+- No flashy or distracting effects
+
+====================================
+NON-FUNCTIONAL REQUIREMENTS
+====================================
+- Production-ready code
+- Clean component structure
+- Scalable architecture
+- Secure authentication
+- Professional SaaS-grade finish
+
+Build this CRM exactly as specified above.
