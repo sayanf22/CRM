@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore, Client, Task } from "@/lib/store";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { 
   X, 
   CheckCircle2, 

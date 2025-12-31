@@ -38,7 +38,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-900">{callsDone} / {dailyTarget}</div>
-            <Progress value={progress} className="h-2 mt-3 bg-blue-100" indicatorClassName="bg-blue-600" />
+            <Progress value={progress} className="h-2 mt-3 bg-blue-100" />
             <p className="text-xs text-blue-700 mt-2">
               {progress >= 100 ? "Goal reached! 🎉" : `${dailyTarget - callsDone} more to go`}
             </p>

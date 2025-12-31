@@ -28,7 +28,7 @@ export default function BottomNav() {
 
           return (
             <Link key={item.path} href={item.path}>
-              <a className={cn(
+              <span className={cn(
                 "relative flex flex-col sm:flex-row items-center sm:justify-start justify-center flex-1 sm:flex-none h-full sm:h-12 py-2 sm:py-0 sm:px-4 text-xs sm:text-sm font-medium transition-colors duration-200 select-none cursor-pointer rounded-md",
                 isActive ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
               )}>
@@ -41,7 +41,7 @@ export default function BottomNav() {
                 )}
                 <Icon className={cn("w-5 h-5 mb-1 sm:mb-0 sm:mr-3", isActive && "stroke-[2.5px]")} />
                 <span className={cn(isActive && "font-semibold")}>{item.label}</span>
-              </a>
+              </span>
             </Link>
           );
         })}
