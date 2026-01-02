@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-// OneSignal App ID from environment variable
-const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
+// OneSignal App ID - must match what's in Supabase secrets
+const ONESIGNAL_APP_ID = 'a530b743-3719-43a7-b4e6-2b29d379d2ee';
 
 // Declare OneSignal types
 declare global {
@@ -18,24 +18,53 @@ export function useOneSignal() {
   const [isSubscribed, setIsSubscribed] = useState(false);
 
   useEffect(() => {
-    // Don't initialize if no App ID configured
-    if (!ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === 'your_onesignal_app_id_here') {
-      console.log('OneSignal: App ID not configured');
-      return;
-    }
-
     // Initialize OneSignal
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function(OneSignal: any) {
       try {
+        console.log('OneSignal: Initializing with App ID:', ONESIGNAL_APP_ID);
+        
         await OneSignal.init({
           appId: ONESIGNAL_APP_ID,
-          // Safari Web ID (optional - only if you have Safari support)
-          // safari_web_id: "web.onesignal.auto.xxxxx",
           notifyButton: {
-            enable: true, // Shows the bell icon for subscription
+            enable: true,
+            size: 'medium',
+            position: 'bottom-right',
+            prenotify: true,
+            showCredit: false,
+            text: {
+              'tip.state.unsubscribed': 'Subscribe to notifications',
+              'tip.state.subscribed': 'You\'re subscribed to notifications',
+              'tip.state.blocked': 'You\'ve blocked notifications',
+              'dialog.main.title': 'Manage Notifications',
+              'dialog.main.button.subscribe': 'SUBSCRIBE',
+              'dialog.main.button.unsubscribe': 'UNSUBSCRIBE',
+            }
           },
-          allowLocalhostAsSecureOrigin: true, // For development
+          welcomeNotification: {
+            title: 'Welcome to CRM!',
+            message: 'Thanks for subscribing to notifications.',
+          },
+          promptOptions: {
+            slidedown: {
+              prompts: [
+                {
+                  type: 'push',
+                  autoPrompt: true,
+                  text: {
+                    actionMessage: 'Get notified about new tasks and reminders',
+                    acceptButton: 'Allow',
+                    cancelButton: 'Later',
+                  },
+                  delay: {
+                    pageViews: 1,
+                    timeDelay: 5,
+                  },
+                }
+              ]
+            }
+          },
+          allowLocalhostAsSecureOrigin: true,
         });
 
         setIsInitialized(true);
@@ -44,6 +73,7 @@ export function useOneSignal() {
         // Check subscription status
         const permission = await OneSignal.Notifications.permission;
         setIsSubscribed(permission);
+        console.log('OneSignal: Current permission:', permission);
 
         // Listen for subscription changes
         OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
@@ -64,15 +94,19 @@ export function useOneSignal() {
     window.OneSignalDeferred?.push(async function(OneSignal: any) {
       try {
         // Set the External User ID to the Supabase user ID
-        // This allows targeting notifications to specific users
+        console.log('OneSignal: Setting external user ID:', user.id);
         await OneSignal.login(user.id);
-        console.log('OneSignal: Logged in user', user.id);
+        console.log('OneSignal: User logged in successfully');
       } catch (error) {
         console.error('OneSignal: Failed to set external user ID', error);
       }
     });
+  }, [isInitialized, user?.id]);
 
-    // Cleanup: logout when user logs out
+  // Logout from OneSignal when user logs out
+  useEffect(() => {
+    if (!isInitialized) return;
+    
     return () => {
       if (!user) {
         window.OneSignalDeferred?.push(async function(OneSignal: any) {
@@ -85,7 +119,7 @@ export function useOneSignal() {
         });
       }
     };
-  }, [isInitialized, user?.id]);
+  }, [isInitialized, user]);
 
   // Function to prompt user for notification permission
   const requestPermission = async () => {
@@ -94,9 +128,11 @@ export function useOneSignal() {
     return new Promise<boolean>((resolve) => {
       window.OneSignalDeferred?.push(async function(OneSignal: any) {
         try {
-          await OneSignal.Notifications.requestPermission();
+          console.log('OneSignal: Requesting permission...');
+          await OneSignal.Slidedown.promptPush();
           const permission = await OneSignal.Notifications.permission;
           setIsSubscribed(permission);
+          console.log('OneSignal: Permission result:', permission);
           resolve(permission);
         } catch (error) {
           console.error('OneSignal: Permission request failed', error);
