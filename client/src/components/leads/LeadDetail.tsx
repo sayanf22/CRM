@@ -1,15 +1,19 @@
 import { useState, useEffect } from "react";
-import { useStore, Lead } from "@/lib/store";
+import { useLead, useUpdateLead, useDeleteLead, Lead } from "@/hooks/use-leads";
+import { useCreateClient } from "@/hooks/use-clients";
+import { useAuth } from "@/contexts/AuthContext";
 import { format } from "date-fns";
-import { 
-  Phone, 
-  MessageSquare, 
-  Calendar, 
-  User, 
+import {
+  Phone,
+  MessageSquare,
   History,
   CheckCircle2,
   X,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  Clock,
+  Flag,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,8 +21,12 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import CountdownTimer from "./CountdownTimer";
 
 interface LeadDetailProps {
   leadId: string;
@@ -26,22 +34,46 @@ interface LeadDetailProps {
 }
 
 export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
-  const { leads, updateLead, addHistoryToLead, convertToClient } = useStore();
-  const lead = leads.find(l => l.id === leadId);
+  const { data: lead, isLoading } = useLead(leadId);
+  const updateLead = useUpdateLead();
+  const deleteLead = useDeleteLead();
+  const createClient = useCreateClient();
+  const { user } = useAuth();
   const { toast } = useToast();
+
+  const [callSummary, setCallSummary] = useState("");
+  const [callOutcome, setCallOutcome] = useState("call_back");
+  const [nextFollowUpDate, setNextFollowUpDate] = useState("");
+  const [interestLevel, setInterestLevel] = useState(50);
+  
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+
+  useEffect(() => {
+    if (lead) {
+      setInterestLevel(lead.interest_level);
+    }
+  }, [lead?.id]);
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!lead) return null;
 
-  // Local state for the "Log Call" form
-  const [callSummary, setCallSummary] = useState("");
-  const [callOutcome, setCallOutcome] = useState("call_back"); // no_response, call_back, interested, not_interested
-  const [nextFollowUpDate, setNextFollowUpDate] = useState("");
-  const [interestLevel, setInterestLevel] = useState(lead.interestLevel);
-
-  // Sync slider when lead changes
-  useEffect(() => {
-    setInterestLevel(lead.interestLevel);
-  }, [lead.id]);
+  const getStatusDisplay = (status: Lead["status"]) => {
+    const map: Record<string, string> = {
+      not_interested: "Not Interested",
+      not_sure: "Not Sure",
+      interested: "Interested",
+      converted: "Converted"
+    };
+    return map[status] || status;
+  };
 
   const handleSaveCall = () => {
     if (!callSummary) {
@@ -53,54 +85,93 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
       return;
     }
 
-    // 1. Add History
-    addHistoryToLead(lead.id, {
-      content: `Call Outcome: ${callOutcome.replace('_', ' ')}. ${callSummary}`,
-      type: "call_summary"
-    });
-
-    // 2. Update Lead
-    const updates: Partial<Lead> = {
-      lastContact: new Date().toISOString(),
-      interestLevel: interestLevel, // Save the slider value
+    const updates: Partial<Lead> & { id: string } = {
+      id: lead.id,
+      last_contact: new Date().toISOString(),
+      interest_level: interestLevel,
+      follow_up_status: 'done', // Mark current follow-up as done
+      notes: lead.notes
+        ? `${lead.notes}\n\n[${new Date().toISOString()}] ${callOutcome}: ${callSummary}`
+        : `[${new Date().toISOString()}] ${callOutcome}: ${callSummary}`,
     };
 
     if (callOutcome === 'not_interested') {
-      updates.status = "Not Interested";
-      updates.nextFollowUp = null;
+      updates.status = "not_interested";
+      updates.next_follow_up = null;
     } else if (callOutcome === 'interested') {
-      updates.status = "Interested";
+      updates.status = "interested";
     }
 
     if (nextFollowUpDate) {
-      updates.nextFollowUp = new Date(nextFollowUpDate).toISOString();
+      updates.next_follow_up = new Date(nextFollowUpDate).toISOString();
+      updates.follow_up_status = 'pending'; // Reset for new follow-up
     }
 
-    updateLead(lead.id, updates);
-
-    toast({ title: "Call Logged", description: "Lead updated successfully." });
-    
-    // Reset form
-    setCallSummary("");
-    setCallOutcome("call_back");
-    setNextFollowUpDate("");
+    updateLead.mutate(updates, {
+      onSuccess: () => {
+        toast({ title: "Call Logged", description: "Lead updated successfully." });
+        setCallSummary("");
+        setCallOutcome("call_back");
+        setNextFollowUpDate("");
+      }
+    });
   };
 
   const handleConvertToClient = () => {
     if (confirm("Are you sure you want to convert this lead to a client?")) {
-      convertToClient(lead.id, {
-        businessName: lead.businessName,
-        ownerName: lead.name,
+      // First update lead status
+      updateLead.mutate({ id: lead.id, status: "converted" });
+
+      // Then create client
+      createClient.mutate({
+        lead_id: lead.id,
+        business_name: lead.business_name || lead.name,
+        owner_name: lead.name,
         phone: lead.phone,
-        address: "Pending Address",
+        address: null,
         services: [],
-        startDate: new Date().toISOString(),
-        deliveryDate: null,
-        status: "Onboarding"
+        start_date: new Date().toISOString().split('T')[0],
+        delivery_date: null,
+        delivered_by: null,
+        status: "onboarding",
+        delivery_notes: null,
+        project_value: 0,
+        payment_status: "pending",
+        paid_amount: 0,
+        payment_date: null,
+      }, {
+        onSuccess: () => {
+          toast({ title: "Converted!", description: `${lead.name} is now a client.` });
+          onClose();
+        }
       });
-      toast({ title: "Converted!", description: `${lead.name} is now a client.` });
-      onClose();
     }
+  };
+
+  const handleDeleteLead = () => {
+    if (deleteConfirmText !== "CONFIRM") {
+      toast({
+        title: "Confirmation required",
+        description: "Please type CONFIRM to delete this lead.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    deleteLead.mutate(lead.id, {
+      onSuccess: () => {
+        toast({ title: "Lead deleted", description: `${lead.name} has been removed.` });
+        setDeleteDialogOpen(false);
+        onClose();
+      },
+      onError: (error) => {
+        toast({
+          title: "Delete failed",
+          description: (error as Error).message,
+          variant: "destructive"
+        });
+      }
+    });
   };
 
   const getInterestColor = (level: number) => {
@@ -109,16 +180,31 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
     return "bg-green-500";
   };
 
+  // Parse notes as history
+  const parseHistory = (notes: string | null) => {
+    if (!notes) return [];
+    const lines = notes.split('\n\n');
+    return lines.map((line, i) => {
+      const match = line.match(/\[(.*?)\] (.*?): (.*)/);
+      if (match) {
+        return { id: i, timestamp: match[1], outcome: match[2], content: match[3] };
+      }
+      return { id: i, timestamp: new Date().toISOString(), outcome: "note", content: line };
+    });
+  };
+
+  const history = parseHistory(lead.notes);
+
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
       <div className="p-6 border-b sticky top-0 bg-white z-10 flex justify-between items-start">
         <div>
           <div className="flex items-center space-x-2 mb-1">
-             <h2 className="text-2xl font-bold font-display">{lead.name}</h2>
-             <Badge variant="outline">{lead.status}</Badge>
+            <h2 className="text-2xl font-bold font-display">{lead.name}</h2>
+            <Badge variant="outline">{getStatusDisplay(lead.status)}</Badge>
           </div>
-          <p className="text-muted-foreground">{lead.businessName}</p>
+          <p className="text-muted-foreground">{lead.business_name || "No business"}</p>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="w-5 h-5" />
@@ -127,17 +213,114 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-8">
-          
+
           {/* Contact Info & Actions */}
           <div className="flex items-center space-x-4">
-             <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => window.open(`tel:${lead.phone}`)}>
-               <Phone className="w-4 h-4 mr-2" />
-               Call {lead.phone}
-             </Button>
-             <Button variant="outline" className="flex-1" onClick={() => window.open(`mailto:?subject=Follow up`)}>
-               <MessageSquare className="w-4 h-4 mr-2" />
-               Email
-             </Button>
+            <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => window.open(`tel:${lead.phone}`)}>
+              <Phone className="w-4 h-4 mr-2" />
+              Call {lead.phone || "No phone"}
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={() => window.open(`mailto:${lead.email || ''}?subject=Follow up`)}>
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Email
+            </Button>
+          </div>
+
+          {/* Priority Follow-up Alert - Overdue */}
+          {lead.next_follow_up && new Date(lead.next_follow_up) <= new Date() && lead.follow_up_status === 'pending' && (
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Clock className="w-5 h-5 text-orange-600" />
+                  <div>
+                    <p className="font-medium text-orange-800">Follow-up Overdue</p>
+                    <CountdownTimer targetDate={lead.next_follow_up} />
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                  onClick={() => {
+                    updateLead.mutate({
+                      id: lead.id,
+                      follow_up_status: 'done',
+                      last_contact: new Date().toISOString(),
+                    }, {
+                      onSuccess: () => {
+                        toast({ title: "Follow-up marked as done" });
+                      }
+                    });
+                  }}
+                  disabled={updateLead.isPending}
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  Mark Done
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming Follow-up Countdown */}
+          {lead.next_follow_up && new Date(lead.next_follow_up) > new Date() && lead.follow_up_status === 'pending' && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Clock className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <p className="font-medium text-blue-800">Next Follow-up</p>
+                    <p className="text-xs text-blue-600 mb-1">
+                      {format(new Date(lead.next_follow_up), "MMM d, yyyy 'at' h:mm a")}
+                    </p>
+                    <CountdownTimer targetDate={lead.next_follow_up} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Priority Selector - Always visible */}
+          <div className={cn(
+            "p-3 rounded-lg flex items-center justify-between",
+            lead.priority === 'urgent' && "bg-red-50 border border-red-200",
+            lead.priority === 'high' && "bg-orange-50 border border-orange-200",
+            lead.priority === 'normal' && "bg-gray-50 border border-gray-200",
+            lead.priority === 'low' && "bg-slate-50 border border-slate-200"
+          )}>
+            <div className="flex items-center space-x-2">
+              <Flag className={cn(
+                "w-4 h-4",
+                lead.priority === 'urgent' && "text-red-600",
+                lead.priority === 'high' && "text-orange-600",
+                lead.priority === 'normal' && "text-gray-500",
+                lead.priority === 'low' && "text-slate-400"
+              )} />
+              <span className={cn(
+                "text-sm font-medium",
+                lead.priority === 'urgent' && "text-red-700",
+                lead.priority === 'high' && "text-orange-700",
+                lead.priority === 'normal' && "text-gray-700",
+                lead.priority === 'low' && "text-slate-600"
+              )}>
+                {(lead.priority || 'normal').charAt(0).toUpperCase() + (lead.priority || 'normal').slice(1)} Priority
+              </span>
+            </div>
+            <Select 
+              value={lead.priority || 'normal'} 
+              onValueChange={(val) => {
+                updateLead.mutate({ id: lead.id, priority: val as Lead['priority'] });
+              }}
+            >
+              <SelectTrigger className="w-[120px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Interest Slider */}
@@ -148,10 +331,10 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
                 {interestLevel}%
               </span>
             </div>
-            <Slider 
-              value={[interestLevel]} 
-              max={100} 
-              step={5} 
+            <Slider
+              value={[interestLevel]}
+              max={100}
+              step={5}
               onValueChange={(val) => setInterestLevel(val[0])}
               className="py-2"
             />
@@ -164,19 +347,19 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
               <Phone className="w-4 h-4 mr-2 text-primary" />
               Log Activity
             </h3>
-            
+
             <div className="space-y-3">
-              <Textarea 
-                placeholder="Call summary... (Required)" 
+              <Textarea
+                placeholder="Call summary... (Required)"
                 value={callSummary}
                 onChange={(e) => setCallSummary(e.target.value)}
                 className="resize-none h-24"
               />
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                   <label className="text-xs text-muted-foreground mb-1 block">Outcome</label>
-                   <Select value={callOutcome} onValueChange={setCallOutcome}>
+                  <label className="text-xs text-muted-foreground mb-1 block">Outcome</label>
+                  <Select value={callOutcome} onValueChange={setCallOutcome}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -188,19 +371,18 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Next Follow-up</label>
-                  <input 
-                    type="datetime-local" 
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    value={nextFollowUpDate}
-                    onChange={(e) => setNextFollowUpDate(e.target.value)}
-                  />
-                </div>
+              </div>
+              
+              <div className="border rounded-lg p-3 bg-gray-50/50">
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">Schedule Next Follow-up</label>
+                <DateTimePicker 
+                  value={nextFollowUpDate} 
+                  onChange={setNextFollowUpDate}
+                />
               </div>
 
-              <Button onClick={handleSaveCall} className="w-full">
-                <CheckCircle2 className="w-4 h-4 mr-2" />
+              <Button onClick={handleSaveCall} className="w-full" disabled={updateLead.isPending}>
+                {updateLead.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
                 Save Activity
               </Button>
             </div>
@@ -210,20 +392,20 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
 
           {/* History Timeline */}
           <div className="space-y-4">
-             <h3 className="font-semibold text-lg flex items-center">
+            <h3 className="font-semibold text-lg flex items-center">
               <History className="w-4 h-4 mr-2 text-primary" />
               History
             </h3>
             <div className="relative border-l border-gray-200 ml-2 space-y-6 pb-4">
-              {lead.history.length === 0 ? (
+              {history.length === 0 ? (
                 <p className="text-sm text-muted-foreground pl-6">No history yet.</p>
               ) : (
-                lead.history.map((note) => (
+                history.map((note) => (
                   <div key={note.id} className="relative pl-6">
                     <div className="absolute -left-1.5 top-1.5 w-3 h-3 bg-gray-200 rounded-full border-2 border-white" />
                     <div className="flex flex-col">
                       <span className="text-xs text-muted-foreground mb-0.5">
-                        {format(new Date(note.timestamp), "MMM d, h:mm a")} • Agent
+                        {format(new Date(note.timestamp), "MMM d, h:mm a")} • {note.outcome}
                       </span>
                       <p className="text-sm text-gray-800 bg-gray-50 p-2 rounded-md border border-gray-100">
                         {note.content}
@@ -237,17 +419,59 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
 
         </div>
       </div>
-      
+
       {/* Bottom Action */}
-      <div className="p-4 border-t bg-gray-50">
-        <Button 
-          className="w-full bg-black text-white hover:bg-gray-800" 
+      <div className="p-4 border-t bg-gray-50 space-y-3">
+        <Button
+          className="w-full bg-black text-white hover:bg-gray-800"
           onClick={handleConvertToClient}
-          disabled={lead.status === "Converted"}
+          disabled={lead.status === "converted" || createClient.isPending}
         >
+          {createClient.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Convert to Client
           <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
+
+        {/* Delete Lead Button */}
+        <Dialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setDeleteConfirmText(""); }}>
+          <Button 
+            variant="outline" 
+            className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete Lead
+          </Button>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-red-600">Delete Lead</DialogTitle>
+              <DialogDescription>
+                This action cannot be undone. This will permanently delete <span className="font-semibold">{lead.name}</span> and all associated data.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">
+                  To confirm deletion, please type <span className="font-bold">CONFIRM</span> below:
+                </p>
+              </div>
+              <Input 
+                value={deleteConfirmText} 
+                onChange={e => setDeleteConfirmText(e.target.value)} 
+                placeholder="Type CONFIRM to delete"
+                className="border-red-200 focus:border-red-400"
+              />
+              <Button 
+                onClick={handleDeleteLead} 
+                className="w-full bg-red-600 hover:bg-red-700 text-white"
+                disabled={deleteConfirmText !== "CONFIRM" || deleteLead.isPending}
+              >
+                {deleteLead.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Delete Lead Permanently
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

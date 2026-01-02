@@ -1,46 +1,82 @@
 import Shell from "@/components/layout/Shell";
-import { useStore } from "@/lib/store";
+import { useCurrentProfile, useProfiles } from "@/hooks/use-profiles";
+import { useLeads } from "@/hooks/use-leads";
+import { useTasks, useUpdateTask } from "@/hooks/use-tasks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Phone, CheckCircle2, Clock, ArrowRight } from "lucide-react";
+import { Phone, CheckCircle2, Clock, ArrowRight, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 
 export default function Dashboard() {
-  const { currentUser, leads, tasks } = useStore();
+  const { data: currentUser, isLoading: isLoadingUser } = useCurrentProfile();
+  const { data: leads = [], isLoading: isLoadingLeads } = useLeads();
+  const { data: tasks = [], isLoading: isLoadingTasks } = useTasks();
+  const { data: profiles = [] } = useProfiles();
+  const updateTask = useUpdateTask();
+
+  const isLoading = isLoadingUser || isLoadingLeads || isLoadingTasks;
+
+  if (isLoading) {
+    return (
+      <Shell>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Shell>
+    );
+  }
 
   // Calculate Stats
-  const assignedLeads = leads.filter(l => l.assignedTo === currentUser.id);
-  const pendingFollowUps = assignedLeads.filter(l => l.nextFollowUp && new Date(l.nextFollowUp) <= new Date());
-  
-  const myTasks = tasks.filter(t => t.assignedTo === currentUser.id && t.status !== "Completed");
-  
-  const dailyTarget = currentUser.dailyCallTarget || 20;
-  const callsDone = currentUser.callsCompletedToday || 0;
-  const progress = (callsDone / dailyTarget) * 100;
+  const assignedLeads = leads.filter(l => l.assigned_to === currentUser?.id);
+  const pendingFollowUps = assignedLeads.filter(l =>
+    l.next_follow_up && new Date(l.next_follow_up) <= new Date()
+  );
+
+  const myTasks = tasks.filter(t =>
+    t.assigned_to === currentUser?.id && t.status !== "completed"
+  );
+
+  // Calculate contacts made today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const contactsToday = leads.filter(l => {
+    if (!l.last_contact) return false;
+    const contactDate = new Date(l.last_contact);
+    return contactDate >= today;
+  }).length;
+
+  const getUserName = (id: string | null) => {
+    if (!id) return "Unassigned";
+    const profile = profiles.find(p => p.id === id);
+    return profile?.full_name || "Unknown";
+  };
+
+  const handleMarkDone = (taskId: string) => {
+    updateTask.mutate({ id: taskId, status: "completed" });
+  };
 
   return (
     <Shell>
       <header className="mb-8">
         <h1 className="text-3xl font-display font-bold text-gray-900">
-          Good morning, {currentUser.name.split(' ')[0]}
+          Good morning, {currentUser?.full_name?.split(' ')[0] || 'User'}
         </h1>
         <p className="text-muted-foreground mt-1">Here is what's on your plate today.</p>
       </header>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-        {/* Daily Call Goal */}
+        {/* Contacts Made Today */}
         <Card className="border-none shadow-sm bg-blue-50/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-blue-900">
-              Daily Calls
+              Contacts Today
             </CardTitle>
             <Phone className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">{callsDone} / {dailyTarget}</div>
-            <Progress value={progress} className="h-2 mt-3 bg-blue-100" />
+            <div className="text-2xl font-bold text-blue-900">{contactsToday}</div>
             <p className="text-xs text-blue-700 mt-2">
-              {progress >= 100 ? "Goal reached! 🎉" : `${dailyTarget - callsDone} more to go`}
+              {contactsToday === 0 ? "No contacts made yet" : `${contactsToday} leads contacted today`}
             </p>
           </CardContent>
         </Card>
@@ -76,6 +112,22 @@ export default function Dashboard() {
             </p>
           </CardContent>
         </Card>
+
+        {/* Total Leads */}
+        <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Total Leads
+            </CardTitle>
+            <Phone className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{leads.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              In your pipeline
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-8 md:grid-cols-2">
@@ -89,18 +141,18 @@ export default function Dashboard() {
               </a>
             </Link>
           </div>
-          
+
           <div className="space-y-3">
             {pendingFollowUps.length === 0 ? (
-               <div className="p-8 text-center border rounded-lg border-dashed text-muted-foreground bg-gray-50">
-                 No pending follow-ups for today. Good job!
-               </div>
+              <div className="p-8 text-center border rounded-lg border-dashed text-muted-foreground bg-gray-50">
+                No pending follow-ups for today. Good job!
+              </div>
             ) : (
               pendingFollowUps.slice(0, 3).map(lead => (
                 <div key={lead.id} className="group flex items-center justify-between p-4 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-primary/20 hover:shadow-md transition-all cursor-pointer">
                   <div>
                     <h3 className="font-medium text-gray-900">{lead.name}</h3>
-                    <p className="text-sm text-gray-500">{lead.businessName}</p>
+                    <p className="text-sm text-gray-500">{lead.business_name}</p>
                   </div>
                   <div className="flex items-center">
                     <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded-full mr-3">
@@ -118,7 +170,7 @@ export default function Dashboard() {
 
         {/* Recent Tasks */}
         <section>
-           <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold font-display">My Tasks</h2>
             <Link href="/tasks">
               <a className="text-sm text-primary font-medium hover:underline flex items-center">
@@ -128,21 +180,24 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-3">
-             {myTasks.length === 0 ? (
-               <div className="p-8 text-center border rounded-lg border-dashed text-muted-foreground bg-gray-50">
-                 You're all caught up!
-               </div>
+            {myTasks.length === 0 ? (
+              <div className="p-8 text-center border rounded-lg border-dashed text-muted-foreground bg-gray-50">
+                You're all caught up!
+              </div>
             ) : (
               myTasks.slice(0, 3).map(task => (
                 <div key={task.id} className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-100 shadow-sm">
                   <div className="flex items-center">
-                    <div className={`w-2 h-2 rounded-full mr-3 ${task.status === 'Pending' ? 'bg-yellow-400' : 'bg-blue-500'}`} />
+                    <div className={`w-2 h-2 rounded-full mr-3 ${task.status === 'pending' ? 'bg-yellow-400' : 'bg-blue-500'}`} />
                     <div>
                       <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
-                      <p className="text-xs text-gray-500">Due: {new Date(task.dueDate).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">Due: {new Date(task.due_date).toLocaleDateString()}</p>
                     </div>
                   </div>
-                   <button className="text-xs border px-2 py-1 rounded hover:bg-gray-50">
+                  <button
+                    onClick={() => handleMarkDone(task.id)}
+                    className="text-xs border px-2 py-1 rounded hover:bg-gray-50"
+                  >
                     Mark Done
                   </button>
                 </div>
