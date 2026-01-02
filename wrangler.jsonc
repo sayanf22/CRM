@@ -1,5 +1,5 @@
 {
-  "name": "crm-app",
+  "name": "crm1",
   "compatibility_date": "2026-01-02",
   "assets": {
     "directory": "./dist/public"
