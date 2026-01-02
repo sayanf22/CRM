@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useOneSignal } from "@/hooks/use-onesignal";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import Leads from "@/pages/Leads";
@@ -18,6 +19,12 @@ import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import JoinTeam from "@/pages/JoinTeam";
+
+// Component to initialize OneSignal (must be inside AuthProvider)
+function OneSignalInitializer() {
+  useOneSignal();
+  return null;
+}
 
 function Router() {
   return (
@@ -73,6 +80,7 @@ function App() {
         <AuthProvider>
           <NotificationProvider>
             <TooltipProvider>
+              <OneSignalInitializer />
               <Toaster />
               <Router />
             </TooltipProvider>
