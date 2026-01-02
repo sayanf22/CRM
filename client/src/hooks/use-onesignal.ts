@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-
-// OneSignal App ID - must match what's in Supabase secrets
-const ONESIGNAL_APP_ID = 'a530b743-3719-43a7-b4e6-2b29d379d2ee';
+import { supabase } from '@/lib/supabase';
 
 // Declare OneSignal types
 declare global {
@@ -16,16 +14,41 @@ export function useOneSignal() {
   const { user } = useAuth();
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [appId, setAppId] = useState<string | null>(null);
 
+  // Fetch OneSignal App ID from Supabase Edge Function
   useEffect(() => {
-    // Initialize OneSignal
+    async function fetchAppId() {
+      try {
+        const { data, error } = await supabase.functions.invoke('get-onesignal-config');
+        if (error) {
+          console.error('OneSignal: Failed to fetch config', error);
+          return;
+        }
+        if (data?.appId) {
+          console.log('OneSignal: Got App ID from server');
+          setAppId(data.appId);
+        } else {
+          console.log('OneSignal: No App ID configured in Supabase secrets');
+        }
+      } catch (err) {
+        console.error('OneSignal: Error fetching config', err);
+      }
+    }
+    fetchAppId();
+  }, []);
+
+  // Initialize OneSignal once we have the App ID
+  useEffect(() => {
+    if (!appId) return;
+
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function(OneSignal: any) {
       try {
-        console.log('OneSignal: Initializing with App ID:', ONESIGNAL_APP_ID);
+        console.log('OneSignal: Initializing...');
         
         await OneSignal.init({
-          appId: ONESIGNAL_APP_ID,
+          appId: appId,
           notifyButton: {
             enable: true,
             size: 'medium',
@@ -85,7 +108,7 @@ export function useOneSignal() {
         console.error('OneSignal: Initialization failed', error);
       }
     });
-  }, []);
+  }, [appId]);
 
   // Link Supabase user ID as External User ID when user logs in
   useEffect(() => {
@@ -93,7 +116,6 @@ export function useOneSignal() {
 
     window.OneSignalDeferred?.push(async function(OneSignal: any) {
       try {
-        // Set the External User ID to the Supabase user ID
         console.log('OneSignal: Setting external user ID:', user.id);
         await OneSignal.login(user.id);
         console.log('OneSignal: User logged in successfully');
