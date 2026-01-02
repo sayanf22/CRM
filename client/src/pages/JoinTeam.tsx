@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import { Users, Mail, Lock, User, Loader2, AlertCircle } from "lucide-react";
+import { Users, Mail, Lock, User, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 
 interface Invitation {
   id: string;
@@ -19,7 +19,11 @@ interface Invitation {
 
 export default function JoinTeam() {
   const search = useSearch();
-  const token = new URLSearchParams(search).get("token");
+  const params = new URLSearchParams(search);
+  const token = params.get("token");
+  const approvedEmail = params.get("email");
+  const isApproved = params.get("approved") === "true";
+  
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -30,14 +34,22 @@ export default function JoinTeam() {
 
   const [formData, setFormData] = useState({
     fullName: "",
-    email: "",
+    email: approvedEmail || "",
     password: "",
     confirmPassword: "",
   });
 
   useEffect(() => {
+    // If coming from approved join request
+    if (isApproved && approvedEmail) {
+      setFormData(prev => ({ ...prev, email: approvedEmail }));
+      setLoading(false);
+      return;
+    }
+
+    // If using invitation token
     if (!token) {
-      setError("Invalid invitation link. No token provided.");
+      setError("Invalid link. Please request to join from the login page.");
       setLoading(false);
       return;
     }
@@ -73,7 +85,7 @@ export default function JoinTeam() {
     };
 
     fetchInvitation();
-  }, [token]);
+  }, [token, approvedEmail, isApproved]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,14 +154,27 @@ export default function JoinTeam() {
         console.error("Profile creation error:", profileError);
       }
 
-      // Update invitation status
-      await supabase
-        .from("team_invitations")
-        .update({ status: "accepted" })
-        .eq("token", token);
+      // Update invitation status if using token
+      if (token) {
+        await supabase
+          .from("team_invitations")
+          .update({ status: "accepted" })
+          .eq("token", token);
+      }
+
+      // Update join request status if using approved email
+      if (isApproved && approvedEmail) {
+        await supabase
+          .from("team_join_requests")
+          .update({ 
+            status: "completed",
+            updated_at: new Date().toISOString()
+          })
+          .eq("email", approvedEmail.toLowerCase());
+      }
 
       toast({
-        title: "Welcome to the team!",
+        title: "Welcome to the team! 🎉",
         description: "Your account has been created successfully.",
       });
 
@@ -175,10 +200,10 @@ export default function JoinTeam() {
             <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
               <AlertCircle className="w-8 h-8 text-red-600" />
             </div>
-            <CardTitle className="text-xl text-red-600">Invalid Invitation</CardTitle>
+            <CardTitle className="text-xl text-red-600">Invalid Link</CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
-          <CardFooter>
+          <CardFooter className="flex flex-col gap-2">
             <Button className="w-full" onClick={() => setLocation("/login")}>
               Go to Login
             </Button>
@@ -202,20 +227,39 @@ export default function JoinTeam() {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.2, duration: 0.4 }}
-              className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg"
+              className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg"
             >
-              <Users className="w-8 h-8 text-white" />
+              {isApproved ? (
+                <CheckCircle2 className="w-8 h-8 text-white" />
+              ) : (
+                <Users className="w-8 h-8 text-white" />
+              )}
             </motion.div>
-            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              Join the Team
+            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+              {isApproved ? "Create Your Account" : "Join the Team"}
             </CardTitle>
             <CardDescription>
-              You've been invited to join as a <span className="font-medium">{invitation?.role}</span>
+              {isApproved ? (
+                "Your request was approved! Set up your account below."
+              ) : invitation ? (
+                <>You've been invited to join as a <span className="font-medium">{invitation.role}</span></>
+              ) : (
+                "Complete your account setup"
+              )}
             </CardDescription>
           </CardHeader>
 
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {isApproved && (
+                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 mb-4">
+                  <p className="text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Your join request has been approved!
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="fullName">Full Name *</Label>
                 <div className="relative">
@@ -243,7 +287,9 @@ export default function JoinTeam() {
                     disabled
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">This email was specified in your invitation</p>
+                <p className="text-xs text-muted-foreground">
+                  {isApproved ? "This is the email you requested to join with" : "This email was specified in your invitation"}
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -282,7 +328,7 @@ export default function JoinTeam() {
             <CardFooter className="flex flex-col gap-4 pt-2">
               <Button
                 type="submit"
-                className="w-full h-11 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                className="w-full h-11 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
@@ -291,7 +337,7 @@ export default function JoinTeam() {
                     Creating account...
                   </>
                 ) : (
-                  "Join Team"
+                  "Create Account & Join Team"
                 )}
               </Button>
 

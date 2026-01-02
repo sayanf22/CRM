@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProfiles, Profile, useCurrentProfile } from "@/hooks/use-profiles";
 import { useAuth } from "@/contexts/AuthContext";
 import Shell from "@/components/layout/Shell";
@@ -7,13 +7,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   Mail, BadgeCheck, Loader2, UserCircle, UserPlus, Copy, Check, 
-  Shield, ShieldCheck, MoreVertical, UserCog, AlertTriangle, Users
+  Shield, ShieldCheck, MoreVertical, AlertTriangle, Users, Clock,
+  CheckCircle2, XCircle, UserCheck
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
@@ -33,6 +34,17 @@ interface AdminPromotionRequest {
   approvals?: { admin_id: string; approved: boolean }[];
 }
 
+interface JoinRequest {
+  id: string;
+  email: string;
+  full_name: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  approved_by: string | null;
+  rejected_by: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+}
+
 export default function Team() {
   const { data: profiles = [], isLoading } = useProfiles();
   const { data: currentProfile } = useCurrentProfile();
@@ -48,9 +60,113 @@ export default function Team() {
   const [copied, setCopied] = useState(false);
   const [promotionDialogOpen, setPromotionDialogOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Profile | null>(null);
+  
+  // Rejection dialog state
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [selectedJoinRequest, setSelectedJoinRequest] = useState<JoinRequest | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
 
   const isAdmin = currentProfile?.role === 'admin';
   const adminCount = profiles.filter(p => p.role === 'admin').length;
+
+  // Fetch pending join requests
+  const { data: joinRequests = [], refetch: refetchJoinRequests } = useQuery({
+    queryKey: ["team-join-requests"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("team_join_requests")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data as JoinRequest[];
+    },
+    enabled: isAdmin,
+  });
+
+  // Real-time subscription for join requests
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const channel = supabase
+      .channel('join-requests-admin')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'team_join_requests'
+        },
+        (payload) => {
+          console.log('Join request change:', payload);
+          refetchJoinRequests();
+          
+          if (payload.eventType === 'INSERT') {
+            const newRequest = payload.new as JoinRequest;
+            toast({
+              title: "New Join Request",
+              description: `${newRequest.full_name || newRequest.email} wants to join the team.`,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, refetchJoinRequests, toast]);
+
+  // Approve join request
+  const approveJoinRequest = useMutation({
+    mutationFn: async (requestId: string) => {
+      const { error } = await supabase
+        .from("team_join_requests")
+        .update({
+          status: "approved",
+          approved_by: user?.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", requestId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Request Approved", description: "The user can now create their account." });
+      queryClient.invalidateQueries({ queryKey: ["team-join-requests"] });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+    },
+  });
+
+  // Reject join request
+  const rejectJoinRequest = useMutation({
+    mutationFn: async ({ requestId, reason }: { requestId: string; reason?: string }) => {
+      const { error } = await supabase
+        .from("team_join_requests")
+        .update({
+          status: "rejected",
+          rejected_by: user?.id,
+          rejection_reason: reason || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", requestId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Request Rejected" });
+      queryClient.invalidateQueries({ queryKey: ["team-join-requests"] });
+      setRejectDialogOpen(false);
+      setSelectedJoinRequest(null);
+      setRejectionReason("");
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+    },
+  });
 
 
   // Fetch pending promotion requests
@@ -315,6 +431,64 @@ export default function Team() {
         )}
       </div>
 
+      {/* Pending Join Requests - Admin Only */}
+      {isAdmin && joinRequests.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <UserCheck className="w-4 h-4 text-blue-500" />
+            Pending Join Requests
+            <Badge variant="secondary" className="ml-1">{joinRequests.length}</Badge>
+          </h2>
+          {joinRequests.map((request) => (
+            <Card key={request.id} className="border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
+                      <Mail className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{request.full_name || "Unknown"}</p>
+                      <p className="text-xs text-muted-foreground">{request.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right text-xs text-muted-foreground">
+                      <Clock className="w-3 h-3 inline mr-1" />
+                      {new Date(request.created_at).toLocaleDateString()}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm" 
+                        onClick={() => approveJoinRequest.mutate(request.id)} 
+                        disabled={approveJoinRequest.isPending}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        Approve
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => {
+                          setSelectedJoinRequest(request);
+                          setRejectDialogOpen(true);
+                        }}
+                        disabled={rejectJoinRequest.isPending}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {/* Pending Promotion Requests - Admin Only */}
       {isAdmin && promotionRequests.length > 0 && (
         <div className="mb-6 space-y-3">
@@ -520,6 +694,60 @@ export default function Team() {
               >
                 {requestPromotion.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Request Promotion
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rejection Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={(open) => {
+        setRejectDialogOpen(open);
+        if (!open) {
+          setSelectedJoinRequest(null);
+          setRejectionReason("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="w-5 h-5" />
+              Reject Join Request
+            </DialogTitle>
+            <DialogDescription>
+              Reject the request from {selectedJoinRequest?.full_name || selectedJoinRequest?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="rejectionReason">Reason (optional)</Label>
+              <Textarea
+                id="rejectionReason"
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Provide a reason for rejection..."
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                This will be shown to the user when they check their request status.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setRejectDialogOpen(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={() => selectedJoinRequest && rejectJoinRequest.mutate({ 
+                  requestId: selectedJoinRequest.id, 
+                  reason: rejectionReason 
+                })} 
+                disabled={rejectJoinRequest.isPending}
+                className="flex-1"
+              >
+                {rejectJoinRequest.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Reject Request
               </Button>
             </div>
           </div>
