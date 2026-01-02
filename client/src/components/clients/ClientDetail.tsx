@@ -183,14 +183,16 @@ export default function ClientDetail({ clientId, onClose }: ClientDetailProps) {
         setNewTaskPriority("normal");
         toast({ title: "Task Created" });
         
-        // Send push notification to assigned user (if not self)
-        if (!isAssigningToSelf && newTaskAssignee) {
-          await sendTaskNotification(
+        // Send push notification to assigned user (always send, even to self)
+        if (newTaskAssignee) {
+          console.log('Sending task notification to:', newTaskAssignee);
+          const result = await sendTaskNotification(
             createdTask.id,
             newTaskAssignee,
             assignerName,
             'task_assigned'
           );
+          console.log('Notification result:', result);
         }
       }
     });
@@ -271,8 +273,9 @@ export default function ClientDetail({ clientId, onClose }: ClientDetailProps) {
       onSuccess: async (createdTask) => {
         toast({ title: "Revision requested", description: "A new revision task has been created." });
         
-        // Send push notification to assigned user (if not self)
-        if (!isAssigningToSelf && task.assigned_to) {
+        // Send push notification to assigned user (always send)
+        if (task.assigned_to) {
+          console.log('Sending revision notification to:', task.assigned_to);
           await sendTaskNotification(
             createdTask.id,
             task.assigned_to,
