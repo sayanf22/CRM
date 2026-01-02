@@ -2,8 +2,8 @@ import { useState } from "react";
 import { 
   User, Settings, LogOut, Bell, HelpCircle, Moon, Sun, Monitor,
   Shield, Download, Upload, Trash2, Database, Mail, Globe,
-  Smartphone, Lock, Eye, Volume2, Palette, ChevronRight, X,
-  FileText, BarChart3, Clock, Calendar, Users, Building2
+  Smartphone, Lock, Eye, Volume2, Palette, ChevronRight,
+  FileText, BarChart3, Clock, Calendar, Users, Building2, BellOff, BellRing
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -18,8 +18,9 @@ import { supabase } from "@/lib/supabase";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useOneSignal } from "@/hooks/use-onesignal";
 import { MenuToggleIcon } from "@/components/ui/menu-toggle-icon";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface Profile {
@@ -43,13 +44,15 @@ interface AppSettings {
 
 export default function HamburgerMenu() {
   const { user, signOut } = useAuth();
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { isInitialized, isSubscribed, isBlocked, requestPermission } = useOneSignal();
   
   const [isOpen, setIsOpen] = useState(false);
   const [activeDialog, setActiveDialog] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState({ full_name: "", avatar_url: "" });
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   
   // App Settings State
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
@@ -141,6 +144,55 @@ export default function HamburgerMenu() {
     localStorage.removeItem("appSettings");
     toast({ title: "Cache cleared", description: "Application cache has been cleared." });
   };
+
+  // Handle push notification toggle
+  const handlePushNotificationToggle = async () => {
+    if (isBlocked) {
+      toast({ 
+        title: "Notifications Blocked", 
+        description: "Please enable notifications in your browser settings and refresh the page.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!isSubscribed) {
+      setIsRequestingPermission(true);
+      try {
+        const granted = await requestPermission();
+        if (granted) {
+          toast({ title: "Notifications Enabled", description: "You will now receive push notifications." });
+        } else {
+          toast({ 
+            title: "Permission Denied", 
+            description: "You won't receive push notifications. You can enable them in browser settings.",
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        toast({ 
+          title: "Error", 
+          description: "Failed to enable notifications. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsRequestingPermission(false);
+      }
+    }
+  };
+
+  // Get push notification status text and color
+  const getPushNotificationStatus = () => {
+    if (isBlocked) {
+      return { text: "Blocked", color: "text-red-500", bgColor: "bg-red-50 dark:bg-red-500/10" };
+    }
+    if (isSubscribed) {
+      return { text: "Enabled", color: "text-green-500", bgColor: "bg-green-50 dark:bg-green-500/10" };
+    }
+    return { text: "Off", color: "text-muted-foreground", bgColor: "bg-secondary/30" };
+  };
+
+  const pushStatus = getPushNotificationStatus();
 
   const menuItems = [
     { icon: User, label: "Profile", onClick: () => handleOpenDialog("profile"), color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-500/10" },
@@ -387,6 +439,57 @@ export default function HamburgerMenu() {
             <DialogDescription>Control how you receive notifications</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Push Notifications - Real OneSignal Integration */}
+            <div className={cn("flex items-center justify-between p-4 rounded-xl border-2 transition-all", 
+              isSubscribed ? "border-green-200 dark:border-green-500/30 bg-green-50/50 dark:bg-green-500/5" : 
+              isBlocked ? "border-red-200 dark:border-red-500/30 bg-red-50/50 dark:bg-red-500/5" : 
+              "border-border bg-secondary/30"
+            )}>
+              <div className="flex items-center gap-3">
+                <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", pushStatus.bgColor)}>
+                  {isBlocked ? (
+                    <BellOff className="w-5 h-5 text-red-500" />
+                  ) : isSubscribed ? (
+                    <BellRing className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <Bell className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+                <div>
+                  <p className="font-medium">Push Notifications</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isBlocked 
+                      ? "Blocked in browser settings" 
+                      : isSubscribed 
+                        ? "You'll receive task & lead reminders" 
+                        : "Enable to receive notifications"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn("text-xs font-medium px-2 py-1 rounded-full", pushStatus.bgColor, pushStatus.color)}>
+                  {pushStatus.text}
+                </span>
+                {!isBlocked && (
+                  <Switch 
+                    checked={isSubscribed} 
+                    onCheckedChange={handlePushNotificationToggle}
+                    disabled={!isInitialized || isRequestingPermission || isSubscribed}
+                  />
+                )}
+              </div>
+            </div>
+
+            {isBlocked && (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  <strong>How to enable:</strong> Click the lock icon in your browser's address bar → Site settings → Allow notifications → Refresh the page
+                </p>
+              </div>
+            )}
+
+            <Separator />
+
             <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/30">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center">
@@ -398,18 +501,6 @@ export default function HamburgerMenu() {
                 </div>
               </div>
               <Switch checked={appSettings.emailNotifications} onCheckedChange={(checked) => saveAppSettings({ ...appSettings, emailNotifications: checked })} />
-            </div>
-            <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/30">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-50 dark:bg-green-500/10 flex items-center justify-center">
-                  <Smartphone className="w-5 h-5 text-green-500" />
-                </div>
-                <div>
-                  <p className="font-medium">Push Notifications</p>
-                  <p className="text-sm text-muted-foreground">Browser push notifications</p>
-                </div>
-              </div>
-              <Switch checked={appSettings.pushNotifications} onCheckedChange={(checked) => saveAppSettings({ ...appSettings, pushNotifications: checked })} />
             </div>
             <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/30">
               <div className="flex items-center gap-3">
@@ -427,11 +518,11 @@ export default function HamburgerMenu() {
             <Separator />
             
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold">Notify me about:</h4>
+              <h4 className="text-sm font-semibold">You'll be notified about:</h4>
               <div className="grid grid-cols-2 gap-2">
-                {["New leads", "Task updates", "Team mentions", "Payment received", "Deadlines", "Comments"].map((item) => (
+                {["New task assigned", "Task reminders", "Lead call reminders", "Team mentions", "Payment received", "Deadlines"].map((item) => (
                   <div key={item} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/20">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <div className={cn("w-2 h-2 rounded-full", isSubscribed ? "bg-green-500" : "bg-muted-foreground")} />
                     <span className="text-sm">{item}</span>
                   </div>
                 ))}

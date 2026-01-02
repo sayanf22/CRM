@@ -49,43 +49,13 @@ export function useOneSignal() {
         
         await OneSignal.init({
           appId: appId,
+          // Disable the default bell button - we'll use our own UI
           notifyButton: {
-            enable: true,
-            size: 'medium',
-            position: 'bottom-right',
-            prenotify: true,
-            showCredit: false,
-            text: {
-              'tip.state.unsubscribed': 'Subscribe to notifications',
-              'tip.state.subscribed': 'You\'re subscribed to notifications',
-              'tip.state.blocked': 'You\'ve blocked notifications',
-              'dialog.main.title': 'Manage Notifications',
-              'dialog.main.button.subscribe': 'SUBSCRIBE',
-              'dialog.main.button.unsubscribe': 'UNSUBSCRIBE',
-            }
+            enable: false,
           },
-          welcomeNotification: {
-            title: 'Welcome to CRM!',
-            message: 'Thanks for subscribing to notifications.',
-          },
+          // Disable auto-prompt - we'll trigger it manually from settings
           promptOptions: {
-            slidedown: {
-              prompts: [
-                {
-                  type: 'push',
-                  autoPrompt: true,
-                  text: {
-                    actionMessage: 'Get notified about new tasks and reminders',
-                    acceptButton: 'Allow',
-                    cancelButton: 'Later',
-                  },
-                  delay: {
-                    pageViews: 1,
-                    timeDelay: 5,
-                  },
-                }
-              ]
-            }
+            autoPrompt: false,
           },
           allowLocalhostAsSecureOrigin: true,
         });
@@ -143,16 +113,20 @@ export function useOneSignal() {
     };
   }, [isInitialized, user]);
 
-  // Function to prompt user for notification permission
-  const requestPermission = async () => {
-    if (!isInitialized) return false;
+  // Function to request notification permission
+  const requestPermission = async (): Promise<boolean> => {
+    if (!isInitialized) {
+      console.log('OneSignal: Not initialized yet');
+      return false;
+    }
 
     return new Promise<boolean>((resolve) => {
       window.OneSignalDeferred?.push(async function(OneSignal: any) {
         try {
           console.log('OneSignal: Requesting permission...');
-          await OneSignal.Slidedown.promptPush();
-          const permission = await OneSignal.Notifications.permission;
+          
+          // Request native browser permission
+          const permission = await OneSignal.Notifications.requestPermission();
           setIsSubscribed(permission);
           console.log('OneSignal: Permission result:', permission);
           resolve(permission);
@@ -164,9 +138,18 @@ export function useOneSignal() {
     });
   };
 
+  // Function to check if notifications are blocked
+  const isBlocked = (): boolean => {
+    if (typeof Notification !== 'undefined') {
+      return Notification.permission === 'denied';
+    }
+    return false;
+  };
+
   return {
     isInitialized,
     isSubscribed,
+    isBlocked: isBlocked(),
     requestPermission,
   };
 }
