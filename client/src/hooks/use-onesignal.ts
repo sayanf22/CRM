@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -10,151 +10,146 @@ declare global {
   }
 }
 
-// Track if OneSignal has been initialized globally (outside React)
+// Global state to prevent multiple initializations
 let oneSignalInitialized = false;
+let appIdFetched: string | null = null;
+let userLoggedIn: string | null = null;
 
 export function useOneSignal() {
   const { user } = useAuth();
   const [isInitialized, setIsInitialized] = useState(oneSignalInitialized);
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [appId, setAppId] = useState<string | null>(null);
-  const initAttempted = useRef(false);
+  const fetchedRef = useRef(false);
+  const loginAttemptedRef = useRef<string | null>(null);
 
-  // Fetch OneSignal App ID from Supabase Edge Function
-  useEffect(() => {
-    async function fetchAppId() {
-      try {
-        console.log('OneSignal: Fetching App ID from server...');
-        const { data, error } = await supabase.functions.invoke('get-onesignal-config');
-        
-        if (error) {
-          console.error('OneSignal: Failed to fetch config', error);
-          return;
-        }
-        
-        console.log('OneSignal: Response from server:', data);
-        
-        if (data?.appId) {
-          console.log('OneSignal: Got App ID from server:', data.appId.substring(0, 8) + '...');
-          setAppId(data.appId);
-        } else {
-          console.warn('OneSignal: No App ID configured in Supabase secrets. Please add ONESIGNAL_APP_ID secret.');
-        }
-      } catch (err) {
-        console.error('OneSignal: Error fetching config', err);
+  // Check current subscription status
+  const checkSubscription = useCallback(async () => {
+    try {
+      if (window.OneSignal?.Notifications) {
+        const permission = await window.OneSignal.Notifications.permission;
+        setIsSubscribed(permission);
+        return permission;
       }
+    } catch (e) {
+      console.error('OneSignal: Error checking subscription', e);
     }
-    fetchAppId();
+    return false;
   }, []);
 
-  // Initialize OneSignal once we have the App ID
+  // Initialize OneSignal
   useEffect(() => {
-    if (!appId || oneSignalInitialized || initAttempted.current) return;
-    initAttempted.current = true;
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
 
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    window.OneSignalDeferred.push(async function(OneSignal: any) {
-      try {
-        // Check if already initialized
-        if (oneSignalInitialized) {
-          console.log('OneSignal: Already initialized, skipping...');
-          setIsInitialized(true);
+    async function initOneSignal() {
+      // If already initialized, just check subscription
+      if (oneSignalInitialized) {
+        setIsInitialized(true);
+        await checkSubscription();
+        return;
+      }
+
+      // Fetch App ID if not already fetched
+      if (!appIdFetched) {
+        try {
+          console.log('OneSignal: Fetching App ID...');
+          const { data, error } = await supabase.functions.invoke('get-onesignal-config');
           
-          // Just check current permission
-          const permission = await OneSignal.Notifications.permission;
-          setIsSubscribed(permission);
+          if (error || !data?.appId) {
+            console.error('OneSignal: Failed to get App ID', error);
+            return;
+          }
+          
+          appIdFetched = data.appId;
+          console.log('OneSignal: Got App ID');
+        } catch (err) {
+          console.error('OneSignal: Error fetching config', err);
           return;
         }
+      }
 
-        console.log('OneSignal: Initializing...');
-        
-        await OneSignal.init({
-          appId: appId,
-          notifyButton: {
-            enable: false,
-          },
-          promptOptions: {
-            autoPrompt: false,
-          },
-          allowLocalhostAsSecureOrigin: true,
-        });
+      // Initialize SDK
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async function(OneSignal: any) {
+        try {
+          if (oneSignalInitialized) {
+            setIsInitialized(true);
+            await checkSubscription();
+            return;
+          }
 
-        oneSignalInitialized = true;
-        setIsInitialized(true);
-        console.log('OneSignal: Initialized successfully');
+          console.log('OneSignal: Initializing SDK...');
+          
+          await OneSignal.init({
+            appId: appIdFetched,
+            notifyButton: { enable: false },
+            promptOptions: { autoPrompt: false },
+            allowLocalhostAsSecureOrigin: true,
+          });
 
-        // Check subscription status
-        const permission = await OneSignal.Notifications.permission;
-        setIsSubscribed(permission);
-        console.log('OneSignal: Current permission:', permission);
-
-        // Listen for subscription changes
-        OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
-          setIsSubscribed(permission);
-          console.log('OneSignal: Permission changed to', permission);
-        });
-
-      } catch (error: any) {
-        // If already initialized, that's okay
-        if (error?.message?.includes('already initialized')) {
-          console.log('OneSignal: Was already initialized');
           oneSignalInitialized = true;
           setIsInitialized(true);
-          
-          // Check current permission
-          try {
-            const OneSignal = window.OneSignal;
-            if (OneSignal) {
-              const permission = await OneSignal.Notifications.permission;
-              setIsSubscribed(permission);
-            }
-          } catch (e) {
-            console.error('OneSignal: Error checking permission', e);
-          }
-        } else {
-          console.error('OneSignal: Initialization failed', error);
-        }
-      }
-    });
-  }, [appId]);
+          console.log('OneSignal: Initialized successfully');
 
-  // Link Supabase user ID as External User ID when user logs in
+          // Check subscription
+          await checkSubscription();
+
+          // Listen for permission changes
+          OneSignal.Notifications.addEventListener('permissionChange', (permission: boolean) => {
+            setIsSubscribed(permission);
+            console.log('OneSignal: Permission changed to', permission);
+          });
+
+        } catch (error: any) {
+          if (error?.message?.includes('already initialized')) {
+            oneSignalInitialized = true;
+            setIsInitialized(true);
+            await checkSubscription();
+          } else {
+            console.error('OneSignal: Init failed', error);
+          }
+        }
+      });
+    }
+
+    initOneSignal();
+  }, [checkSubscription]);
+
+  // Login user to OneSignal (link external user ID)
   useEffect(() => {
     if (!isInitialized || !user?.id) return;
+    if (loginAttemptedRef.current === user.id) return;
+    if (userLoggedIn === user.id) return;
 
-    window.OneSignalDeferred?.push(async function(OneSignal: any) {
-      try {
-        console.log('OneSignal: Setting external user ID:', user.id);
-        await OneSignal.login(user.id);
-        console.log('OneSignal: User logged in successfully');
-      } catch (error) {
-        console.error('OneSignal: Failed to set external user ID', error);
-      }
-    });
+    loginAttemptedRef.current = user.id;
+
+    // Wait a bit for SDK to be fully ready
+    const timer = setTimeout(() => {
+      window.OneSignalDeferred?.push(async function(OneSignal: any) {
+        try {
+          // Check if SDK is ready
+          if (!OneSignal?.User) {
+            console.log('OneSignal: SDK not ready for login yet');
+            return;
+          }
+          
+          console.log('OneSignal: Logging in user:', user.id);
+          await OneSignal.login(user.id);
+          userLoggedIn = user.id;
+          console.log('OneSignal: User logged in');
+        } catch (error) {
+          console.error('OneSignal: Login failed (non-critical)', error);
+        }
+      });
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, [isInitialized, user?.id]);
 
-  // Logout from OneSignal when user logs out
-  useEffect(() => {
-    if (!isInitialized) return;
-    
-    return () => {
-      if (!user) {
-        window.OneSignalDeferred?.push(async function(OneSignal: any) {
-          try {
-            await OneSignal.logout();
-            console.log('OneSignal: Logged out user');
-          } catch (error) {
-            console.error('OneSignal: Failed to logout', error);
-          }
-        });
-      }
-    };
-  }, [isInitialized, user]);
-
-  // Function to request notification permission
-  const requestPermission = async (): Promise<boolean> => {
+  // Request notification permission
+  const requestPermission = useCallback(async (): Promise<boolean> => {
     if (!isInitialized) {
-      console.log('OneSignal: Not initialized yet');
+      console.log('OneSignal: Not initialized');
       return false;
     }
 
@@ -162,8 +157,6 @@ export function useOneSignal() {
       window.OneSignalDeferred?.push(async function(OneSignal: any) {
         try {
           console.log('OneSignal: Requesting permission...');
-          
-          // Request native browser permission
           const permission = await OneSignal.Notifications.requestPermission();
           setIsSubscribed(permission);
           console.log('OneSignal: Permission result:', permission);
@@ -174,20 +167,15 @@ export function useOneSignal() {
         }
       });
     });
-  };
+  }, [isInitialized]);
 
-  // Function to check if notifications are blocked
-  const isBlocked = (): boolean => {
-    if (typeof Notification !== 'undefined') {
-      return Notification.permission === 'denied';
-    }
-    return false;
-  };
+  // Check if notifications are blocked
+  const isBlocked = typeof Notification !== 'undefined' && Notification.permission === 'denied';
 
   return {
     isInitialized,
     isSubscribed,
-    isBlocked: isBlocked(),
+    isBlocked,
     requestPermission,
   };
 }
