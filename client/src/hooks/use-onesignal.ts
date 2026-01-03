@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -10,11 +10,15 @@ declare global {
   }
 }
 
+// Track if OneSignal has been initialized globally (outside React)
+let oneSignalInitialized = false;
+
 export function useOneSignal() {
   const { user } = useAuth();
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(oneSignalInitialized);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [appId, setAppId] = useState<string | null>(null);
+  const initAttempted = useRef(false);
 
   // Fetch OneSignal App ID from Supabase Edge Function
   useEffect(() => {
@@ -45,26 +49,37 @@ export function useOneSignal() {
 
   // Initialize OneSignal once we have the App ID
   useEffect(() => {
-    if (!appId) return;
+    if (!appId || oneSignalInitialized || initAttempted.current) return;
+    initAttempted.current = true;
 
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     window.OneSignalDeferred.push(async function(OneSignal: any) {
       try {
+        // Check if already initialized
+        if (oneSignalInitialized) {
+          console.log('OneSignal: Already initialized, skipping...');
+          setIsInitialized(true);
+          
+          // Just check current permission
+          const permission = await OneSignal.Notifications.permission;
+          setIsSubscribed(permission);
+          return;
+        }
+
         console.log('OneSignal: Initializing...');
         
         await OneSignal.init({
           appId: appId,
-          // Disable the default bell button - we'll use our own UI
           notifyButton: {
             enable: false,
           },
-          // Disable auto-prompt - we'll trigger it manually from settings
           promptOptions: {
             autoPrompt: false,
           },
           allowLocalhostAsSecureOrigin: true,
         });
 
+        oneSignalInitialized = true;
         setIsInitialized(true);
         console.log('OneSignal: Initialized successfully');
 
@@ -79,8 +94,26 @@ export function useOneSignal() {
           console.log('OneSignal: Permission changed to', permission);
         });
 
-      } catch (error) {
-        console.error('OneSignal: Initialization failed', error);
+      } catch (error: any) {
+        // If already initialized, that's okay
+        if (error?.message?.includes('already initialized')) {
+          console.log('OneSignal: Was already initialized');
+          oneSignalInitialized = true;
+          setIsInitialized(true);
+          
+          // Check current permission
+          try {
+            const OneSignal = window.OneSignal;
+            if (OneSignal) {
+              const permission = await OneSignal.Notifications.permission;
+              setIsSubscribed(permission);
+            }
+          } catch (e) {
+            console.error('OneSignal: Error checking permission', e);
+          }
+        } else {
+          console.error('OneSignal: Initialization failed', error);
+        }
       }
     });
   }, [appId]);
