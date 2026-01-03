@@ -48,6 +48,11 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  
+  // Mark call done dialog state
+  const [markDoneDialogOpen, setMarkDoneDialogOpen] = useState(false);
+  const [markDoneComment, setMarkDoneComment] = useState("");
+  const [markDoneNextCall, setMarkDoneNextCall] = useState("");
 
   useEffect(() => {
     if (lead) {
@@ -174,6 +179,40 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
     });
   };
 
+  // Handle marking call as done with comment and next call date
+  const handleMarkCallDone = () => {
+    const updates: Partial<Lead> & { id: string } = {
+      id: lead.id,
+      follow_up_status: 'done',
+      last_contact: new Date().toISOString(),
+    };
+
+    // Add comment to notes if provided
+    if (markDoneComment.trim()) {
+      const timestamp = new Date().toISOString();
+      const newNote = `[${timestamp}] call_completed: ${markDoneComment.trim()}`;
+      updates.notes = lead.notes ? `${lead.notes}\n\n${newNote}` : newNote;
+    }
+
+    // Set next follow-up if provided
+    if (markDoneNextCall) {
+      updates.next_follow_up = new Date(markDoneNextCall).toISOString();
+      updates.follow_up_status = 'pending'; // Reset for new follow-up
+    }
+
+    updateLead.mutate(updates, {
+      onSuccess: () => {
+        toast({ 
+          title: "Call Marked Done", 
+          description: markDoneNextCall ? "Next follow-up scheduled." : "Follow-up completed." 
+        });
+        setMarkDoneDialogOpen(false);
+        setMarkDoneComment("");
+        setMarkDoneNextCall("");
+      }
+    });
+  };
+
   const getInterestColor = (level: number) => {
     if (level <= 30) return "bg-red-500";
     if (level <= 70) return "bg-yellow-500";
@@ -241,17 +280,7 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
                   size="sm"
                   variant="outline"
                   className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                  onClick={() => {
-                    updateLead.mutate({
-                      id: lead.id,
-                      follow_up_status: 'done',
-                      last_contact: new Date().toISOString(),
-                    }, {
-                      onSuccess: () => {
-                        toast({ title: "Follow-up marked as done" });
-                      }
-                    });
-                  }}
+                  onClick={() => setMarkDoneDialogOpen(true)}
                   disabled={updateLead.isPending}
                 >
                   <CheckCircle2 className="w-4 h-4 mr-1" />
@@ -275,6 +304,16 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
                     <CountdownTimer targetDate={lead.next_follow_up} />
                   </div>
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                  onClick={() => setMarkDoneDialogOpen(true)}
+                  disabled={updateLead.isPending}
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  Mark Done
+                </Button>
               </div>
             </div>
           )}
@@ -473,6 +512,75 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Mark Call Done Dialog */}
+      <Dialog open={markDoneDialogOpen} onOpenChange={(open) => { 
+        setMarkDoneDialogOpen(open); 
+        if (!open) { 
+          setMarkDoneComment(""); 
+          setMarkDoneNextCall(""); 
+        } 
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+              Mark Call as Done
+            </DialogTitle>
+            <DialogDescription>
+              Add details about your conversation with {lead.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Call Comment */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Call Summary / Notes</label>
+              <Textarea
+                placeholder="What did you discuss? Any important points..."
+                value={markDoneComment}
+                onChange={(e) => setMarkDoneComment(e.target.value)}
+                className="resize-none h-24"
+              />
+              <p className="text-xs text-muted-foreground">Optional: Add notes about the conversation</p>
+            </div>
+
+            {/* Next Call Date */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Schedule Next Call</label>
+              <div className="border rounded-lg p-3 bg-gray-50/50">
+                <DateTimePicker 
+                  value={markDoneNextCall} 
+                  onChange={setMarkDoneNextCall}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Optional: Set when to follow up next</p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-2">
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => setMarkDoneDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleMarkCallDone} 
+                className="flex-1 bg-green-600 hover:bg-green-700"
+                disabled={updateLead.isPending}
+              >
+                {updateLead.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                )}
+                Mark Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
