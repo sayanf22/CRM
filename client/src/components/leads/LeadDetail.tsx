@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLead, useUpdateLead, useDeleteLead, Lead } from "@/hooks/use-leads";
-import { useCreateClient } from "@/hooks/use-clients";
-import { useAuth } from "@/contexts/AuthContext";
+import { useCreateClient, notifyNewClient } from "@/hooks/use-clients";
+import { useCurrentProfile } from "@/hooks/use-profiles";
 import { format } from "date-fns";
 import {
   Phone,
@@ -38,7 +38,7 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
   const updateLead = useUpdateLead();
   const deleteLead = useDeleteLead();
   const createClient = useCreateClient();
-  const { user } = useAuth();
+  const { data: currentProfile } = useCurrentProfile();
   const { toast } = useToast();
 
   const [callSummary, setCallSummary] = useState("");
@@ -145,8 +145,17 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
         paid_amount: 0,
         payment_date: null,
       }, {
-        onSuccess: () => {
+        onSuccess: (newClient) => {
           toast({ title: "Converted!", description: `${lead.name} is now a client.` });
+          
+          // Notify admins about the new client
+          notifyNewClient(
+            newClient.id,
+            newClient.business_name,
+            currentProfile?.full_name || 'Team member',
+            'client_converted'
+          );
+          
           onClose();
         }
       });

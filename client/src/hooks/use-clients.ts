@@ -22,6 +22,36 @@ export interface Client {
     updated_at: string;
 }
 
+// Helper function to notify admins about new client
+export async function notifyNewClient(
+    clientId: string,
+    clientName: string,
+    createdByName: string,
+    notificationType: 'new_client' | 'client_converted' = 'new_client'
+) {
+    try {
+        const { data, error } = await supabase.functions.invoke('notify-new-client', {
+            body: {
+                client_id: clientId,
+                client_name: clientName,
+                created_by_name: createdByName,
+                notification_type: notificationType,
+            }
+        });
+        
+        if (error) {
+            console.error('Failed to notify admins about new client:', error);
+            return { success: false, error };
+        }
+        
+        console.log('Admins notified about new client:', data);
+        return { success: true, data };
+    } catch (err) {
+        console.error('Error calling notification function:', err);
+        return { success: false, error: err };
+    }
+}
+
 export function useClients() {
     return useQuery({
         queryKey: ["clients"],
