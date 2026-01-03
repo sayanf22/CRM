@@ -181,30 +181,42 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
 
   // Handle marking call as done with comment and next call date
   const handleMarkCallDone = () => {
+    // Validate required fields
+    if (!markDoneComment.trim()) {
+      toast({
+        title: "Comment Required",
+        description: "Please add notes about the conversation.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!markDoneNextCall) {
+      toast({
+        title: "Next Call Date Required",
+        description: "Please schedule the next follow-up call.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const updates: Partial<Lead> & { id: string } = {
       id: lead.id,
-      follow_up_status: 'done',
+      follow_up_status: 'pending', // Keep pending since we're scheduling next call
       last_contact: new Date().toISOString(),
+      next_follow_up: new Date(markDoneNextCall).toISOString(),
     };
 
-    // Add comment to notes if provided
-    if (markDoneComment.trim()) {
-      const timestamp = new Date().toISOString();
-      const newNote = `[${timestamp}] call_completed: ${markDoneComment.trim()}`;
-      updates.notes = lead.notes ? `${lead.notes}\n\n${newNote}` : newNote;
-    }
-
-    // Set next follow-up if provided
-    if (markDoneNextCall) {
-      updates.next_follow_up = new Date(markDoneNextCall).toISOString();
-      updates.follow_up_status = 'pending'; // Reset for new follow-up
-    }
+    // Add comment to notes
+    const timestamp = new Date().toISOString();
+    const newNote = `[${timestamp}] call_completed: ${markDoneComment.trim()}`;
+    updates.notes = lead.notes ? `${lead.notes}\n\n${newNote}` : newNote;
 
     updateLead.mutate(updates, {
       onSuccess: () => {
         toast({ 
-          title: "Call Marked Done", 
-          description: markDoneNextCall ? "Next follow-up scheduled." : "Follow-up completed." 
+          title: "Call Logged", 
+          description: "Notes saved and next follow-up scheduled." 
         });
         setMarkDoneDialogOpen(false);
         setMarkDoneComment("");
@@ -534,26 +546,29 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
           <div className="space-y-4 py-4">
             {/* Call Comment */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Call Summary / Notes</label>
+              <label className="text-sm font-medium">
+                Call Summary / Notes <span className="text-red-500">*</span>
+              </label>
               <Textarea
                 placeholder="What did you discuss? Any important points..."
                 value={markDoneComment}
                 onChange={(e) => setMarkDoneComment(e.target.value)}
                 className="resize-none h-24"
+                required
               />
-              <p className="text-xs text-muted-foreground">Optional: Add notes about the conversation</p>
             </div>
 
             {/* Next Call Date */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Schedule Next Call</label>
+              <label className="text-sm font-medium">
+                Schedule Next Call <span className="text-red-500">*</span>
+              </label>
               <div className="border rounded-lg p-3 bg-gray-50/50">
                 <DateTimePicker 
                   value={markDoneNextCall} 
                   onChange={setMarkDoneNextCall}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">Optional: Set when to follow up next</p>
             </div>
 
             {/* Action Buttons */}
@@ -575,7 +590,7 @@ export default function LeadDetail({ leadId, onClose }: LeadDetailProps) {
                 ) : (
                   <CheckCircle2 className="w-4 h-4 mr-2" />
                 )}
-                Mark Done
+                Save & Schedule
               </Button>
             </div>
           </div>
