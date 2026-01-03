@@ -20,16 +20,21 @@ export function useOneSignal() {
   useEffect(() => {
     async function fetchAppId() {
       try {
+        console.log('OneSignal: Fetching App ID from server...');
         const { data, error } = await supabase.functions.invoke('get-onesignal-config');
+        
         if (error) {
           console.error('OneSignal: Failed to fetch config', error);
           return;
         }
+        
+        console.log('OneSignal: Response from server:', data);
+        
         if (data?.appId) {
-          console.log('OneSignal: Got App ID from server');
+          console.log('OneSignal: Got App ID from server:', data.appId.substring(0, 8) + '...');
           setAppId(data.appId);
         } else {
-          console.log('OneSignal: No App ID configured in Supabase secrets');
+          console.warn('OneSignal: No App ID configured in Supabase secrets. Please add ONESIGNAL_APP_ID secret.');
         }
       } catch (err) {
         console.error('OneSignal: Error fetching config', err);

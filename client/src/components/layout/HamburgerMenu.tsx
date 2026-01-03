@@ -458,23 +458,25 @@ export default function HamburgerMenu() {
                 <div>
                   <p className="font-medium">Push Notifications</p>
                   <p className="text-sm text-muted-foreground">
-                    {isBlocked 
-                      ? "Blocked in browser settings" 
-                      : isSubscribed 
-                        ? "You'll receive task & lead reminders" 
-                        : "Enable to receive notifications"}
+                    {!isInitialized 
+                      ? "Loading..." 
+                      : isBlocked 
+                        ? "Blocked in browser settings" 
+                        : isSubscribed 
+                          ? "You'll receive task & lead reminders" 
+                          : "Enable to receive notifications"}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn("text-xs font-medium px-2 py-1 rounded-full", pushStatus.bgColor, pushStatus.color)}>
-                  {pushStatus.text}
+                  {!isInitialized ? "..." : pushStatus.text}
                 </span>
                 {!isBlocked && (
                   <Switch 
                     checked={isSubscribed} 
                     onCheckedChange={handlePushNotificationToggle}
-                    disabled={!isInitialized || isRequestingPermission || isSubscribed}
+                    disabled={!isInitialized || isRequestingPermission}
                   />
                 )}
               </div>
